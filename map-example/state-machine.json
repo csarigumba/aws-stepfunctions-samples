@@ -1,0 +1,34 @@
+{
+  "Comment": "A Step Function that uses a Map state with a Pass state to process an array of items.",
+  "StartAt": "ProcessBatchOfItems",
+  "States": {
+    "ProcessBatchOfItems": {
+      "Type": "Map",
+      "Comment": "This Map state iterates over each item in the '$.items' array from the input.",
+      "InputPath": "$.items",
+      "MaxConcurrency": 2,
+      "Iterator": {
+        "StartAt": "ProcessSingleItem",
+        "States": {
+          "ProcessSingleItem": {
+            "Type": "Pass",
+            "Comment": "This Pass state simulates processing for each item without calling a Lambda.",
+            "Parameters": {
+              "id.$": "$.id",
+              "value.$": "$.value",
+              "status": "processed-by-pass-state",
+              "processedAt.$": "$$.State.EnteredTime"
+            },
+            "ResultPath": "$.processingResult",
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.processedItems",
+      "Next": "FinalStep"
+    },
+    "FinalStep": {
+      "Type": "Succeed"
+    }
+  }
+}
