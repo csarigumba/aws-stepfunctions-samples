@@ -1,0 +1,95 @@
+{
+  "Comment": "A comprehensive example demonstrating all major AWS Step Functions state types.",
+  "StartAt": "PrepareInput",
+  "States": {
+    "PrepareInput": {
+      "Type": "Pass",
+      "Comment": "A Pass state to add initial metadata to the input.",
+      "Result": {
+        "prepared": true,
+        "preparedAt.$": "$$.State.EnteredTime"
+      },
+      "ResultPath": "$.preparationDetails",
+      "Next": "CheckRequestType"
+    },
+    "CheckRequestType": {
+      "Type": "Choice",
+      "Comment": "A Choice state to route execution based on the input.",
+      "Choices": [
+        {
+          "Variable": "$.requestType",
+          "StringEquals": "runParallel",
+          "Next": "ParallelExecution"
+        },
+        {
+          "Variable": "$.requestType",
+          "StringEquals": "runMap",
+          "Next": "MapExecution"
+        }
+      ],
+      "Default": "HandleFailure"
+    },
+    "ParallelExecution": {
+      "Type": "Parallel",
+      "Comment": "A Parallel state to run two branches concurrently.",
+      "Branches": [
+        {
+          "StartAt": "WaitForTask",
+          "States": {
+            "WaitForTask": {
+              "Type": "Pass",
+              "Comment": "A Pass state that acts as a placeholder for a long-running job.",
+              "Result": {
+                "status": "completed",
+                "completedBy": "PassStatePlaceholder"
+              },
+              "ResultPath": "$.taskResult",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "WaitState",
+          "States": {
+            "WaitState": {
+              "Type": "Wait",
+              "Comment": "A Wait state that pauses execution for a fixed duration.",
+              "Seconds": 10,
+              "End": true
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.parallelResult",
+      "Next": "HandleSuccess"
+    },
+    "MapExecution": {
+      "Type": "Map",
+      "Comment": "A Map state to iterate over an array from the input.",
+      "InputPath": "$.items",
+      "MaxConcurrency": 2,
+      "Iterator": {
+        "StartAt": "ProcessItem",
+        "States": {
+          "ProcessItem": {
+            "Type": "Pass",
+            "Result": "Processed",
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.mapResult",
+      "Next": "HandleSuccess"
+    },
+    "HandleFailure": {
+      "Type": "Fail",
+      "Comment": "A Fail state to terminate the execution with a custom error.",
+      "Error": "InvalidRequestType",
+      "Cause": "The 'requestType' in the input was not 'runParallel' or 'runMap'."
+    },
+    "HandleSuccess": {
+      "Type": "Succeed",
+      "Comment": "A Succeed state to terminate the execution successfully."
+    }
+  }
+}
