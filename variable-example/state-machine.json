@@ -1,0 +1,61 @@
+{
+  "Comment": "A sample workflow using JSONPath with a Pass state as a calculation placeholder.",
+  "StartAt": "StoreInputAsVariables",
+  "States": {
+    "StoreInputAsVariables": {
+      "Type": "Pass",
+      "Comment": "Store the initial order details into variables using JSONPath.",
+      "Assign": {
+        "productId.$": "$.order_details.product_id",
+        "quantity.$": "$.order_details.quantity_requested"
+      },
+      "Next": "MockItemLookup"
+    },
+    "MockItemLookup": {
+      "Type": "Pass",
+      "Comment": "This state simulates the output of a lookup task.",
+      "Result": {
+        "price": 25.5,
+        "name": "Super Widget",
+        "in_stock": true
+      },
+      "ResultPath": "$.lookup_result",
+      "Next": "StoreItemDetails"
+    },
+    "StoreItemDetails": {
+      "Type": "Pass",
+      "Comment": "Store the data from the mock lookup into variables using JSONPath.",
+      "Assign": {
+        "itemPrice.$": "$.lookup_result.price",
+        "inStock.$": "$.lookup_result.in_stock"
+      },
+      "Next": "CheckIfInStock"
+    },
+    "CheckIfInStock": {
+      "Type": "Choice",
+      "Comment": "Referencing variables is the same in Choice states.",
+      "Choices": [
+        {
+          "Variable": "$inStock",
+          "BooleanEquals": true,
+          "Next": "PrepareCalculation"
+        }
+      ],
+      "Default": "ItemOutOfStock"
+    },
+    "PrepareCalculation": {
+      "Type": "Pass",
+      "Comment": "This Pass state demonstrates accessing variables to generate a summary string.",
+      "Parameters": {
+        "summary.$": "States.Format('Calculation placeholder: The item price is {} and the quantity is {}.', $itemPrice, $quantity)"
+      },
+      "ResultPath": "$.final_output",
+      "End": true
+    },
+    "ItemOutOfStock": {
+      "Type": "Fail",
+      "Cause": "The requested item is not in stock.",
+      "Error": "Error.ItemOutOfStock"
+    }
+  }
+}
