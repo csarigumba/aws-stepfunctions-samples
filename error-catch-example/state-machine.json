@@ -1,0 +1,51 @@
+{
+  "Comment": "A Step Function focused on demonstrating Retry and Catch for error handling.",
+  "StartAt": "AttemptCriticalTask",
+  "States": {
+    "AttemptCriticalTask": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::testing:fail",
+      "Parameters": {
+        "Error": "TransientError",
+        "Cause": "This is a simulated transient failure to trigger the Retry block."
+      },
+      "Comment": "This task is designed to fail to demonstrate error handling.",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "TransientError"
+          ],
+          "Comment": "Retry up to 2 times on this specific, recoverable error.",
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Comment": "If all retries fail, catch the error to prevent the workflow from failing.",
+          "Next": "HandleFailureGracefully",
+          "ResultPath": "$.errorInfo"
+        }
+      ],
+      "Next": "SuccessState"
+    },
+    "HandleFailureGracefully": {
+      "Type": "Pass",
+      "Comment": "This state is executed after a failure is caught.",
+      "Parameters": {
+        "recoveryStatus": "Success",
+        "message": "The critical task failed, but we caught the error and recovered.",
+        "originalError.$": "$.errorInfo"
+      },
+      "Next": "SuccessState"
+    },
+    "SuccessState": {
+      "Type": "Succeed",
+      "Comment": "The workflow ends successfully, either by the task succeeding or by the error being handled."
+    }
+  }
+}
