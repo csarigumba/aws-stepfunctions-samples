@@ -1,0 +1,33 @@
+{
+  "Comment": "Pass-only test of data transformations without Lambda or ResultSelector",
+  "StartAt": "PrepareSimulatedLambdaInput",
+  "States": {
+    "PrepareSimulatedLambdaInput": {
+      "Type": "Pass",
+      "InputPath": "$.details",
+      "Parameters": {
+        "action": "PROCESS_USER",
+        "username.$": "$.name",
+        "userAge.$": "$.age",
+        "staticValue": "StepFunctionsRocks"
+      },
+      "ResultPath": "$.simulatedLambdaInput",
+      "Next": "SimulateLambdaOutput",
+      "Comment": "Input\n\n{\n  \"userId\": \"abc123\",\n  \"details\": {\n    \"name\": \"John\",\n    \"age\": 30\n  },\n  \"metadata\": {\n    \"traceId\": \"xyz789\"\n  }\n}\n"
+    },
+    "SimulateLambdaOutput": {
+      "Type": "Pass",
+      "Result": {
+        "resultStatus": "success",
+        "timestamp": "2025-08-04T10:00:00Z"
+      },
+      "ResultPath": "$.lambdaOutput",
+      "Next": "SuccessState"
+    },
+    "SuccessState": {
+      "Type": "Pass",
+      "Result": "Test Completed",
+      "End": true
+    }
+  }
+}
