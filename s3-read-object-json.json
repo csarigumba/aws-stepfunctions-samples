@@ -1,0 +1,59 @@
+{
+  "Comment": "Read JSON from S3 and use it in the workflow",
+  "StartAt": "GetConfigFromS3",
+  "States": {
+    "GetConfigFromS3": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+      "Parameters": {
+        "Bucket": "geco-athena-export-result",
+        "Key": "etl.json"
+      },
+      "ResultSelector": {
+        "config.$": "States.StringToJson($.Body)"
+      },
+      "ResultPath": "$.s3",
+      "Next": "UseConfig",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "S3.NoSuchKey",
+            "S3.NoSuchBucket"
+          ],
+          "ResultPath": "$.error",
+          "Next": "ConfigNotFound"
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "ResultPath": "$.error",
+          "Next": "GenericFailure"
+        }
+      ]
+    },
+    "UseConfig": {
+      "Type": "Pass",
+      "Parameters": {
+        "dbHost.$": "$.s3.config.database.host",
+        "featureFlags.$": "$.s3.config.featureFlags",
+        "rawConfig.$": "$.s3.config"
+      },
+      "ResultPath": "$.config",
+      "Next": "Done"
+    },
+    "ConfigNotFound": {
+      "Type": "Fail",
+      "Error": "ConfigMissing",
+      "Cause": "S3 object not found"
+    },
+    "GenericFailure": {
+      "Type": "Fail",
+      "Error": "GetObjectFailed",
+      "Cause": "Unexpected failure calling S3:GetObject"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

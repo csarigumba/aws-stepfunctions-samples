@@ -1,0 +1,103 @@
+{
+  "Comment": "A Step Function to orchestrate the Binder Master ETL and S3 export process using Pass states for simulation.",
+  "StartAt": "GetParameterFromSSM",
+  "States": {
+    "GetParameterFromSSM": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+      "Parameters": {
+        "Name.$": "$.sql_source.ssm_parameter"
+      },
+      "ResultPath": "$.SsmParameter",
+      "Next": "ParseParameterString"
+    },
+    "ParseParameterString": {
+      "Type": "Pass",
+      "Parameters": {
+        "OriginalArray.$": "States.StringToJson($.SsmParameter.Parameter.Value)"
+      },
+      "ResultPath": "$.ParsedParameter",
+      "Next": "ChunkTheArray"
+    },
+    "ChunkTheArray": {
+      "Type": "Pass",
+      "Parameters": {
+        "BatchedArrays.$": "States.ArrayPartition($.ParsedParameter.OriginalArray.queries, $.sql_source.chunk_size)"
+      },
+      "ResultPath": "$.PayloadForMap",
+      "Next": "ProcessBatchesInParallel"
+    },
+    "ProcessBatchesInParallel": {
+      "Type": "Map",
+      "MaxConcurrency": 1,
+      "ItemsPath": "$.PayloadForMap.BatchedArrays",
+      "Iterator": {
+        "StartAt": "ConfirmBatchReceived",
+        "States": {
+          "ConfirmBatchReceived": {
+            "Type": "Pass",
+            "Comment": "This is a Pass state simulating the 'db-to-db-binder-etl-fn' Lambda.",
+            "Result": {
+              "statusCode": 200,
+              "body": {
+                "message": "Done running queries.",
+                "tart": "b_ShainMaster"
+              }
+            },
+            "End": true,
+            "ResultPath": "$.etlQueryResponse"
+          }
+        }
+      },
+      "Next": "ExportTablesToS3",
+      "ResultPath": "$.etlAllResponse",
+      "ItemSelector": {
+        "target_name.$": "$.target_name",
+        "queries.$": "$$.Map.Item.Value"
+      }
+    },
+    "ExportTablesToS3": {
+      "Type": "Pass",
+      "Comment": "This is a Pass state simulating the 'db-to-s3-binder-export' Lambda.",
+      "Result": {
+        "statusCode": 200,
+        "body": {
+          "message": "Export completed successfully.",
+          "s3_bucket": "bct-sdbrelay-db-to-s3-binder-export-d000-jpe-001",
+          "prd_files": [
+            {
+              "csv_file_key": "${date}/binder_master_shain_upsert_prd-${date}-${time}-chunk-1.csv"
+            },
+            {
+              "csv_file_key": "${date}/binder_master_shain_upsert_prd-${date}-${time}-chunk-2.csv"
+            }
+          ],
+          "stg_files": [
+            {
+              "csv_file_key": "${date}/binder_master_shain_upsert_stg-${date}-${time}-chunk-1.csv"
+            },
+            {
+              "csv_file_key": "${date}/binder_master_shain_upsert_stg-${date}-${time}-chunk-2.csv"
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.exportResult",
+      "Next": "FormatFinalOutput",
+      "Parameters": {
+        "target_name.$": "$.target_name",
+        "export_targets.$": "$.export_targets"
+      }
+    },
+    "FormatFinalOutput": {
+      "Type": "Pass",
+      "Comment": "Formats the final output to include only S3 bucket and file information.",
+      "Parameters": {
+        "s3_bucket.$": "$.exportResult.body.s3_bucket",
+        "prd_files.$": "$.exportResult.body.prd_files",
+        "stg_files.$": "$.exportResult.body.stg_files"
+      },
+      "End": true
+    }
+  }
+}

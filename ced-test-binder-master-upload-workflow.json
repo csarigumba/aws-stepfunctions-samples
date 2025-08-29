@@ -1,0 +1,167 @@
+{
+  "Comment": "Processes an array of CSV files sequentially, with a polling loop for each file. It stops if any single file processing fails.",
+  "StartAt": "PrepareExecution",
+  "States": {
+    "PrepareExecution": {
+      "Type": "Pass",
+      "Comment": "Groups common parameters into a single object for clarity.",
+      "Next": "ProcessCsvArray",
+      "Assign": {
+        "sdb_operation": "{% $states.input.sdb_operation %}",
+        "sdb_target_environment": "{% $states.input.sdb_target_environment %}",
+        "sdb_binder_key": "{% $states.input.sdb_binder_key %}",
+        "sdb_binder_view": "{% $states.input.sdb_binder_view %}",
+        "csv_files": "{% $states.input.csv_files %}"
+      },
+      "QueryLanguage": "JSONata"
+    },
+    "ProcessCsvArray": {
+      "Type": "Map",
+      "Comment": "Iterates over the 'csv_files' array, passing common parameters to each iteration.",
+      "ItemsPath": "$csv_files",
+      "MaxConcurrency": 1,
+      "Iterator": {
+        "StartAt": "InitializePerItemContext",
+        "States": {
+          "InitializePerItemContext": {
+            "Type": "Pass",
+            "Comment": "Sets initial values for the polling loop.",
+            "Next": "UploadToSmartDB",
+            "QueryLanguage": "JSONata",
+            "Assign": {
+              "WAIT_TIME_SECONDS": 5,
+              "COUNTER": 0,
+              "MAX_COUNTER": 3
+            }
+          },
+          "UploadToSmartDB": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "arn:aws:lambda:ap-northeast-1:495599756463:function:lambda_sdbrelay_s3_to_sdb_binder_upload_fn_d000-jpe-001:$LATEST",
+              "Payload": {
+                "sdb_operation.$": "$sdb_operation",
+                "sdb_target_environment.$": "$sdb_target_environment",
+                "sdb_binder_key.$": "$sdb_binder_key",
+                "sdb_binder_view.$": "$sdb_binder_view",
+                "csv_file_key.$": "$.csv_file_key"
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              },
+              {
+                "ErrorEquals": [
+                  "InternalServerError",
+                  "Error"
+                ],
+                "BackoffRate": 2,
+                "IntervalSeconds": 5,
+                "MaxAttempts": 3,
+                "JitterStrategy": "FULL",
+                "Comment": "Application Error"
+              }
+            ],
+            "Next": "WaitBeforePoll",
+            "ResultPath": "$.upload"
+          },
+          "WaitBeforePoll": {
+            "Type": "Wait",
+            "Comment": "Waits for a defined period before checking the job status.",
+            "Next": "IncrementCounter",
+            "QueryLanguage": "JSONata",
+            "Seconds": "{% $WAIT_TIME_SECONDS %}"
+          },
+          "IncrementCounter": {
+            "Type": "Pass",
+            "Comment": "Increments the loop counter.",
+            "Next": "MonitorUploadInSDB",
+            "Assign": {
+              "COUNTER": "{% $COUNTER + 1 %}"
+            },
+            "QueryLanguage": "JSONata"
+          },
+          "MonitorUploadInSDB": {
+            "Type": "Pass",
+            "Comment": "Placeholder for the 'MonitorUploadInSDB' Lambda. Mocking a 'still processing' response.",
+            "Result": {
+              "Payload": {
+                "statusCode": 200,
+                "body": {
+                  "message": "Job is still in progress."
+                }
+              }
+            },
+            "ResultPath": "$.monitor",
+            "Next": "JobCompletionCheck",
+            "Parameters": {
+              "sdb_target_environment.$": "$sdb_target_environment",
+              "job_id.$": "$.upload.Payload.body.jobId"
+            }
+          },
+          "JobCompletionCheck": {
+            "Type": "Choice",
+            "Comment": "Checks if the job is complete or if the timeout has been reached.",
+            "Choices": [
+              {
+                "Comment": "Job succeeded. Mocking a success check for statusCode 200.",
+                "And": [
+                  {
+                    "Variable": "$.monitor.Payload.statusCode",
+                    "NumericEquals": 200
+                  },
+                  {
+                    "Variable": "$COUNTER",
+                    "NumericLessThanEqualsPath": "$COUNTER"
+                  }
+                ],
+                "Next": "ProcessingSucceeded"
+              },
+              {
+                "Comment": "Timeout reached.",
+                "Variable": "$COUNTER",
+                "NumericGreaterThanPath": "$MAX_COUNTER",
+                "Next": "ProcessingFailed"
+              }
+            ],
+            "Default": "WaitBeforePoll"
+          },
+          "ProcessingSucceeded": {
+            "Type": "Succeed"
+          },
+          "ProcessingFailed": {
+            "Type": "Fail",
+            "Error": "PollingTimeout",
+            "Cause": "The job did not complete within the specified time limit."
+          }
+        }
+      },
+      "Next": "ExecutionSucceeded",
+      "ResultPath": "$.perFileResults",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "NonRecoverableError"
+          ],
+          "Next": "ExecutionFailed"
+        }
+      ]
+    },
+    "ExecutionFailed": {
+      "Type": "Fail"
+    },
+    "ExecutionSucceeded": {
+      "Type": "Succeed"
+    }
+  }
+}
